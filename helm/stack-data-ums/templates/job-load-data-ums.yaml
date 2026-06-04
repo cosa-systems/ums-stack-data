@@ -101,6 +101,60 @@ spec:
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
       {{ end }}
+      {{- /* Merge externally-provided context-user passwords into context.yaml.
+             Only spawned when at least one contextUsers.*.existingSecret.name
+             is set; otherwise the chart-emitted `<release>-context` Secret
+             already carries the passwords as `templateContext` keys. */}}
+      {{- $hasExternalContextUser := or
+            (.Values.contextUsers.svcPortalServer.existingSecret).name
+            (or
+              (.Values.contextUsers.administrator.existingSecret).name
+              (.Values.contextUsers.readonlyUser.existingSecret).name) }}
+      {{- if $hasExternalContextUser }}
+      {{- if not .Values.stackDataUms.dependencyUdmApiWait }}
+      initContainers:
+      {{- end }}
+      - name: "prepare-context"
+        {{- if .Values.containerSecurityContext.enabled }}
+        securityContext: {{- omit .Values.containerSecurityContext "enabled" | toYaml | nindent 12 }}
+        {{- end }}
+        {{- with .Values.image }}
+        image: "{{ coalesce .registry $.Values.global.imageRegistry }}/{{ .repository }}{{ if .sha256 }}@sha256:{{ .sha256 }}{{ else }}:{{ .tag }}{{ end }}"
+        imagePullPolicy: {{ coalesce .pullPolicy $.Values.global.imagePullPolicy | quote }}
+        {{- end }}
+        command:
+          - "sh"
+          - "-c"
+          - |
+            set -eu
+            cp /input/base/context.yaml /merged/context.yaml
+            {{- if (.Values.contextUsers.svcPortalServer.existingSecret).name }}
+            printf 'svcPortalServerUserPassword: "%s"\n' \
+              "$(cat /input/passwords/svcPortalServerUserPassword)" \
+              >> /merged/context.yaml
+            {{- end }}
+            {{- if (.Values.contextUsers.administrator.existingSecret).name }}
+            printf 'initialPasswordAdministrator: "%s"\n' \
+              "$(cat /input/passwords/initialPasswordAdministrator)" \
+              >> /merged/context.yaml
+            {{- end }}
+            {{- if (.Values.contextUsers.readonlyUser.existingSecret).name }}
+            printf 'readonlyUserPassword: "%s"\n' \
+              "$(cat /input/passwords/readonlyUserPassword)" \
+              >> /merged/context.yaml
+            {{- end }}
+        volumeMounts:
+          - name: context-config
+            mountPath: /input/base
+            readOnly: true
+          - name: context-passwords
+            mountPath: /input/passwords
+            readOnly: true
+          - name: context-merged
+            mountPath: /merged
+        resources:
+          {{- toYaml .Values.initResources | nindent 10 }}
+      {{- end }}
       containers:
       - name: "main"
         command:
@@ -137,9 +191,15 @@ spec:
             mountPath: "/join-data"
             subPath: udm-data-loader
             readOnly: true
+          {{- if $hasExternalContextUser }}
+          - name: context-merged
+            mountPath: /template-context
+            readOnly: true
+          {{- else }}
           - name: context-config
             mountPath: /template-context
             readOnly: true
+          {{- end }}
         resources:
           {{- toYaml .Values.resources | nindent 10 }}
       volumes:
@@ -155,4 +215,32 @@ spec:
             secretName: "{{ include "common.names.fullname" . }}-context"
         - name: "plugin-targets"
           emptyDir: {}
+        {{- if $hasExternalContextUser }}
+        - name: context-merged
+          emptyDir: {}
+        - name: context-passwords
+          projected:
+            sources:
+              {{- if (.Values.contextUsers.svcPortalServer.existingSecret).name }}
+              - secret:
+                  name: {{ include "nubus-common.secrets.name" (dict "existingSecret" .Values.contextUsers.svcPortalServer.existingSecret "defaultNameSuffix" "svc-portal-server" "context" .) }}
+                  items:
+                    - key: {{ include "nubus-common.secrets.key" (dict "existingSecret" .Values.contextUsers.svcPortalServer.existingSecret "key" "password" "context" .) }}
+                      path: svcPortalServerUserPassword
+              {{- end }}
+              {{- if (.Values.contextUsers.administrator.existingSecret).name }}
+              - secret:
+                  name: {{ include "nubus-common.secrets.name" (dict "existingSecret" .Values.contextUsers.administrator.existingSecret "defaultNameSuffix" "administrator" "context" .) }}
+                  items:
+                    - key: {{ include "nubus-common.secrets.key" (dict "existingSecret" .Values.contextUsers.administrator.existingSecret "key" "password" "context" .) }}
+                      path: initialPasswordAdministrator
+              {{- end }}
+              {{- if (.Values.contextUsers.readonlyUser.existingSecret).name }}
+              - secret:
+                  name: {{ include "nubus-common.secrets.name" (dict "existingSecret" .Values.contextUsers.readonlyUser.existingSecret "defaultNameSuffix" "readonly-user" "context" .) }}
+                  items:
+                    - key: {{ include "nubus-common.secrets.key" (dict "existingSecret" .Values.contextUsers.readonlyUser.existingSecret "key" "password" "context" .) }}
+                      path: readonlyUserPassword
+              {{- end }}
+        {{- end }}
 {{- end }}
