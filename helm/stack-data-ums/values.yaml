@@ -81,6 +81,36 @@ udm:
       keyMapping:
         password: null
 
+# -- Context users provisioned by the data-loader Job.
+#
+# Each entry exposes an `existingSecret` knob that, when set, makes the
+# chart skip emitting its own password Secret. Downstream consumers
+# (portal-server, keycloak-bootstrap) resolve the Secret name via
+# `nubus-common.secrets.name`, so they pick up the externally-provided
+# Secret automatically.
+#
+# Note: the data-loader Job still reads `templateContext.*Password`
+# values from `<release>-context` to create the LDAP users. Operators
+# using `existingSecret` typically also set the matching
+# `templateContext.*` value (via `providedValues`) or disable the Job
+# (`dataLoader.enabled: false`) and provision the users out-of-band.
+contextUsers:
+  svcPortalServer:
+    existingSecret:
+      name: null
+      keyMapping:
+        password: null
+  administrator:
+    existingSecret:
+      name: null
+      keyMapping:
+        password: null
+  readonlyUser:
+    existingSecret:
+      name: null
+      keyMapping:
+        password: null
+
 # -- Context used to render the data file templates in the data loader.
 templateContext:
   # -- Domain name of the instance. Chart defaults to `univention-organization.intranet`
