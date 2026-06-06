@@ -105,11 +105,10 @@ spec:
              Only spawned when at least one contextUsers.*.existingSecret.name
              is set; otherwise the chart-emitted `<release>-context` Secret
              already carries the passwords as `templateContext` keys. */}}
-      {{- $hasExternalContextUser := or
-            (.Values.contextUsers.svcPortalServer.existingSecret).name
-            (or
-              (.Values.contextUsers.administrator.existingSecret).name
-              (.Values.contextUsers.readonlyUser.existingSecret).name) }}
+      {{- $hasExternalContextUser := false }}
+      {{- range $cu := .Values.contextUsers }}
+      {{- if ($cu.existingSecret).name }}{{- $hasExternalContextUser = true }}{{- end }}
+      {{- end }}
       {{- if $hasExternalContextUser }}
       {{- if not .Values.stackDataUms.dependencyUdmApiWait }}
       initContainers:
@@ -128,20 +127,12 @@ spec:
           - |
             set -eu
             cp /input/base/context.yaml /merged/context.yaml
-            {{- if (.Values.contextUsers.svcPortalServer.existingSecret).name }}
-            printf 'svcPortalServerUserPassword: "%s"\n' \
-              "$(cat /input/passwords/svcPortalServerUserPassword)" \
+            {{- range $cu := .Values.contextUsers }}
+            {{- if ($cu.existingSecret).name }}
+            printf '{{ $cu.contextKey }}: "%s"\n' \
+              "$(cat /input/passwords/{{ $cu.contextKey }})" \
               >> /merged/context.yaml
             {{- end }}
-            {{- if (.Values.contextUsers.administrator.existingSecret).name }}
-            printf 'initialPasswordAdministrator: "%s"\n' \
-              "$(cat /input/passwords/initialPasswordAdministrator)" \
-              >> /merged/context.yaml
-            {{- end }}
-            {{- if (.Values.contextUsers.readonlyUser.existingSecret).name }}
-            printf 'readonlyUserPassword: "%s"\n' \
-              "$(cat /input/passwords/readonlyUserPassword)" \
-              >> /merged/context.yaml
             {{- end }}
         volumeMounts:
           - name: context-config
@@ -221,26 +212,14 @@ spec:
         - name: context-passwords
           projected:
             sources:
-              {{- if (.Values.contextUsers.svcPortalServer.existingSecret).name }}
+              {{- range $cu := .Values.contextUsers }}
+              {{- if ($cu.existingSecret).name }}
               - secret:
-                  name: {{ include "nubus-common.secrets.name" (dict "existingSecret" .Values.contextUsers.svcPortalServer.existingSecret "defaultNameSuffix" "svc-portal-server" "context" .) }}
+                  name: {{ include "nubus-common.secrets.name" (dict "existingSecret" $cu.existingSecret "defaultNameSuffix" $cu.contextKey "context" $) }}
                   items:
-                    - key: {{ include "nubus-common.secrets.key" (dict "existingSecret" .Values.contextUsers.svcPortalServer.existingSecret "key" "password" "context" .) }}
-                      path: svcPortalServerUserPassword
+                    - key: {{ include "nubus-common.secrets.key" (dict "existingSecret" $cu.existingSecret "key" "password" "context" $) }}
+                      path: {{ $cu.contextKey }}
               {{- end }}
-              {{- if (.Values.contextUsers.administrator.existingSecret).name }}
-              - secret:
-                  name: {{ include "nubus-common.secrets.name" (dict "existingSecret" .Values.contextUsers.administrator.existingSecret "defaultNameSuffix" "administrator" "context" .) }}
-                  items:
-                    - key: {{ include "nubus-common.secrets.key" (dict "existingSecret" .Values.contextUsers.administrator.existingSecret "key" "password" "context" .) }}
-                      path: initialPasswordAdministrator
-              {{- end }}
-              {{- if (.Values.contextUsers.readonlyUser.existingSecret).name }}
-              - secret:
-                  name: {{ include "nubus-common.secrets.name" (dict "existingSecret" .Values.contextUsers.readonlyUser.existingSecret "defaultNameSuffix" "readonly-user" "context" .) }}
-                  items:
-                    - key: {{ include "nubus-common.secrets.key" (dict "existingSecret" .Values.contextUsers.readonlyUser.existingSecret "key" "password" "context" .) }}
-                      path: readonlyUserPassword
               {{- end }}
         {{- end }}
 {{- end }}

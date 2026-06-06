@@ -83,29 +83,32 @@ udm:
 
 # -- Context users provisioned by the data-loader Job.
 #
-# Each entry exposes an `existingSecret` knob that, when set, makes the
-# chart skip emitting its own password Secret. Downstream consumers
-# (portal-server, keycloak-bootstrap) resolve the Secret name via
-# `nubus-common.secrets.name`, so they pick up the externally-provided
-# Secret automatically.
-#
-# Note: the data-loader Job still reads `templateContext.*Password`
-# values from `<release>-context` to create the LDAP users. Operators
-# using `existingSecret` typically also set the matching
-# `templateContext.*` value (via `providedValues`) or disable the Job
-# (`dataLoader.enabled: false`) and provision the users out-of-band.
+# This is an open map: each entry's `contextKey` is the `templateContext`
+# key whose password the entry manages, and its `existingSecret`, when set,
+# makes the data-loader Job read that password from the referenced Secret at
+# runtime (the `prepare-context` initContainer merges it into context.yaml and
+# the key is dropped from the chart-emitted `<release>-context` Secret) instead
+# of from `templateContext`. The three built-ins below also generate their
+# password + emit a per-user Secret (consumed by portal-server / keycloak-
+# bootstrap) when no `existingSecret` is set; additional entries are treated as
+# merge-only (provide the value via `existingSecret`, or via `templateContext`
+# directly). Downstream consumers resolve Secret names via
+# `nubus-common.secrets.name`, so they pick up externally-provided Secrets.
 contextUsers:
   svcPortalServer:
+    contextKey: "svcPortalServerUserPassword"
     existingSecret:
       name: null
       keyMapping:
         password: null
   administrator:
+    contextKey: "initialPasswordAdministrator"
     existingSecret:
       name: null
       keyMapping:
         password: null
   readonlyUser:
+    contextKey: "readonlyUserPassword"
     existingSecret:
       name: null
       keyMapping:
