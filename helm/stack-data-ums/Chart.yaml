@@ -9,7 +9,7 @@ name: "stack-data-ums"
 description: "A Helm chart to load the initial data into the UMS Stack"
 home: "https://www.univention.de/"
 icon: "https://www.univention.com/wp-content/themes/univention/assets/images/univention.svg"
-version: "0.103.2-cosa.1"
+version: "0.103.3-cosa.1"
 
 dependencies:
   - name: "nubus-common"
